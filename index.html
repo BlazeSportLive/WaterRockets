@@ -6,96 +6,8 @@
 
 <title>WaterRocket</title>
 
-<!-- Подключаем Appwrite SDK -->
-<script src="https://cdn.jsdelivr.net/npm/appwrite@17.0.0"></script>
-
-<script>
-    // Инициализация Appwrite SDK (замените endpoint и project ID на ваши)
-    const { Client, TablesDB, ID } = Appwrite;
-
-    const client = new Client()
-        .setEndpoint('https://fra.cloud.appwrite.io/v1') // Укажите ваш Endpoint
-        .setProject('6aa96634001350f1248f');     // Укажите ваш Project ID
-
-    const tablesDB = new TablesDB(client);
-
-    const DATABASE_ID = 'waterrocket_db';
-    const TABLE_ID = 'waterrocket_table';
-
-    let data = { children: [] };
-    let rowId = null; // ID строки в TablesDB
-
-    // Загрузка данных из TablesDB
-    async function initAppwrite() {
-        try {
-            const response = await tablesDB.listRows(
-                DATABASE_ID,
-                TABLE_ID
-            );
-            
-            if (response.rows.length > 0) {
-                const row = response.rows[0];
-                rowId = row.$id;
-                // Данные хранятся в поле data (если это строка JSON, парсим, если объект — используем напрямую)
-                if (typeof row.data === 'string') {
-                    data = JSON.parse(row.data || '{"children":[]}');
-                } else {
-                    data = row.data || { children: [] };
-                }
-            } else {
-                // Если строк еще нет, создаем первую пустую строку
-                const created = await tablesDB.createRow(
-                    DATABASE_ID,
-                    TABLE_ID,
-                    ID.unique(),
-                    { data: JSON.stringify({ children: [] }) }
-                );
-                rowId = created.$id;
-                data = { children: [] };
-            }
-
-            renderAll();
-
-            // Подписка на изменения в реальном времени через Realtime API для TablesDB
-            client.subscribe(`tablesdb.${DATABASE_ID}.tables.${TABLE_ID}.rows`, response => {
-                if (response.events.some(e => e.includes(".update"))) {
-                    const updatedRow = response.payload;
-                    if (updatedRow.$id === rowId) {
-                        if (typeof updatedRow.data === 'string') {
-                            data = JSON.parse(updatedRow.data || '{"children":[]}');
-                        } else {
-                            data = updatedRow.data || { children: [] };
-                        }
-                        renderAll();
-                    }
-                }
-            });
-
-        } catch (error) {
-            console.error("Ошибка подключения к TablesDB:", error);
-            alert("Не удалось подключиться к TablesDB. Проверьте настройки базы данных и таблиц.");
-        }
-    }
-
-    // Сохранение данных в TablesDB
-    async function saveToAppwrite() {
-        if (!rowId) return;
-        try {
-            await tablesDB.updateRow(
-                DATABASE_ID,
-                TABLE_ID,
-                rowId,
-                { data: JSON.stringify(data) }
-            );
-        } catch (e) {
-            console.error("Ошибка сохранения:", e);
-            alert("Ошибка сохранения данных в TablesDB!");
-        }
-    }
-
-    // Запускаем инициализацию при загрузке страницы
-    window.addEventListener('DOMContentLoaded', initAppwrite);
-</script>
+<!-- Подключаем SheetJS (xlsx) для работы с Excel -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <style>
 
@@ -200,6 +112,7 @@ h1 {
 .actions {
     display: flex;
     gap: 10px;
+    flex-wrap: wrap;
 }
 
 /* =========================
@@ -223,6 +136,12 @@ h1 {
     background: #2563eb;
     color: white;
     border-color: #2563eb;
+}
+
+.btn.excel {
+    background: #16a34a;
+    color: white;
+    border-color: #16a34a;
 }
 
 /* =========================
@@ -274,6 +193,7 @@ h1 {
     align-items: center;
     gap: 15px;
     margin-bottom: 15px;
+    flex-wrap: wrap;
 }
 
 .search,
@@ -643,7 +563,7 @@ select {
 <aside class="sidebar">
 
     <div class="logo">
-        🏊 <span>Water</span>Rocket
+        🏊 <span>WATER</span> ROCKET
     </div>
 
     <div class="nav">
@@ -651,7 +571,7 @@ select {
         <button
             class="active"
             data-view="dashboard">
-            📊 WATERROCKET
+            📊 WATER ROCKET
         </button>
 
         <button
@@ -689,7 +609,7 @@ select {
         <div>
 
             <h1 id="title">
-                WATERROCKET
+                WATER ROCKET
             </h1>
 
             <div class="subtitle">
@@ -701,19 +621,28 @@ select {
         <div class="actions">
 
             <button
+                class="btn excel"
+                id="exportExcelBtn">
+                📥 Экспорт в Excel
+            </button>
+
+            <button
+                class="btn excel"
+                onclick="document.getElementById('importExcelInput').click()">
+                📤 Импорт из Excel
+            </button>
+            <input type="file" id="importExcelInput" accept=".xlsx, .xls" style="display: none;" onchange="importFromExcel(event)">
+
+            <button
                 class="btn"
                 id="notifyBtn">
-
                 🔔 Уведомления
-
             </button>
 
             <button
                 class="btn primary"
                 id="addBtn">
-
                 ＋ Добавить ребенка
-
             </button>
 
         </div>
@@ -917,9 +846,7 @@ select {
             <button
                 class="btn"
                 id="prevMonth">
-
                 ←
-
             </button>
 
 
@@ -931,9 +858,7 @@ select {
             <button
                 class="btn"
                 id="nextMonth">
-
                 →
-
             </button>
 
         </div>
@@ -985,9 +910,7 @@ select {
             <button
                 class="btn primary"
                 id="addBtn2">
-
                 ＋ Добавить ребенка
-
             </button>
 
         </div>
@@ -1010,14 +933,22 @@ select {
     class="hidden">
 
     <div class="card">
-        <button
-            class="btn"
-            id="notifyBtn2">
+        <strong>Настройки и данные</strong>
+        <p class="subtitle" style="margin-top: 10px;">Вы можете экспортировать все данные системы в файл Excel или импортировать их обратно для восстановления.</p>
+        
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button class="btn excel" onclick="exportToExcel()">📥 Скачать Excel</button>
+            <button class="btn excel" onclick="document.getElementById('importExcelInput2').click()">📤 Загрузить Excel</button>
+            <input type="file" id="importExcelInput2" accept=".xlsx, .xls" style="display: none;" onchange="importFromExcel(event)">
+        </div>
 
-            🔔 Разрешить уведомления
-
-        </button>
-
+        <div style="margin-top: 30px;">
+            <button
+                class="btn"
+                id="notifyBtn2">
+                🔔 Разрешить уведомления
+            </button>
+        </div>
     </div>
 
 </section>
@@ -1129,18 +1060,14 @@ select {
                     type="button"
                     class="btn"
                     id="cancel">
-
                     Отмена
-
                 </button>
 
 
                 <button
                     type="submit"
                     class="btn primary">
-
                     Сохранить
-
                 </button>
 
             </div>
@@ -1155,498 +1082,2255 @@ select {
 <script>
 
 /* =====================================================
-   ЛОГИКА И ОТРИСОВКА
+   ХРАНИЛИЩЕ
 ===================================================== */
 
+const STORAGE_KEY =
+    "swimTracker_v3";
+
+
+let data =
+    JSON.parse(
+        localStorage.getItem(STORAGE_KEY)
+        ||
+        '{"children":[]}'
+    );
+
+
 let editId = null;
-let calendarDate = new Date();
+
+
+/*
+   Текущий месяц календаря.
+*/
+
+let calendarDate =
+    new Date();
+
+
+/* =====================================================
+   СОХРАНЕНИЕ
+===================================================== */
 
 function saveData() {
-    saveToAppwrite();
+
+    localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(data)
+    );
+
     renderAll();
+
 }
+
+
+/* =====================================================
+   ID
+===================================================== */
 
 function createId() {
+
     return (
-        Date.now().toString(36) +
-        Math.random().toString(36).substring(2)
+        Date.now().toString(36)
+        +
+        Math.random()
+            .toString(36)
+            .substring(2)
     );
+
 }
+
+
+/* =====================================================
+   НАЙТИ РЕБЕНКА
+===================================================== */
 
 function getChild(id) {
-    return data.children.find(child => child.id === id);
+
+    return data.children.find(
+        child => child.id === id
+    );
+
 }
+
+
+/* =====================================================
+   ЛОКАЛЬНАЯ ДАТА
+===================================================== */
 
 function formatDateLocal(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return year + "-" + month + "-" + day;
+
+    const year =
+        date.getFullYear();
+
+    const month =
+        String(
+            date.getMonth() + 1
+        ).padStart(2, "0");
+
+    const day =
+        String(
+            date.getDate()
+        ).padStart(2, "0");
+
+    return (
+        year +
+        "-" +
+        month +
+        "-" +
+        day
+    );
+
 }
 
-function createLocalDate(year, month, day) {
-    return new Date(year, month, day, 12, 0, 0, 0);
+
+/* =====================================================
+   СОЗДАТЬ ДАТУ БЕЗ UTC
+===================================================== */
+
+function createLocalDate(
+    year,
+    month,
+    day
+) {
+
+    return new Date(
+        year,
+        month,
+        day,
+        12,
+        0,
+        0,
+        0
+    );
+
 }
+
+
+/* =====================================================
+   ПОСЕЩЕНИЯ
+===================================================== */
 
 function getVisits(child) {
-    return (child.visits || []).filter(date => {
-        if (child.start && date < child.start) return false;
-        if (child.end && date > child.end) return false;
-        return true;
-    });
+
+    return (
+        child.visits || []
+    ).filter(
+        date => {
+
+            if (
+                child.start &&
+                date < child.start
+            ) {
+                return false;
+            }
+
+
+            if (
+                child.end &&
+                date > child.end
+            ) {
+                return false;
+            }
+
+
+            return true;
+
+        }
+    );
+
 }
+
+
+/* =====================================================
+   ПРОВЕРКА ОКОНЧАНИЯ
+===================================================== */
 
 function isExpired(child) {
-    if (!child.end) return false;
-    const today = formatDateLocal(new Date());
+
+    if (!child.end) {
+        return false;
+    }
+
+    const today =
+        formatDateLocal(
+            new Date()
+        );
+
+
     return today > child.end;
+
 }
+
+
+/* =====================================================
+   ОСТАТОК
+===================================================== */
 
 function getRemaining(child) {
-    if (isExpired(child)) return 0;
-    const bought = Number(child.bought || 0);
-    const visited = getVisits(child).length;
-    return Math.max(0, bought - visited);
+
+    if (isExpired(child)) {
+        return 0;
+    }
+
+
+    const bought =
+        Number(child.bought || 0);
+
+
+    const visited =
+        getVisits(child).length;
+
+
+    return Math.max(
+        0,
+        bought - visited
+    );
+
 }
+
+
+/* =====================================================
+   СТАТУС
+===================================================== */
 
 function getStatus(child) {
+
     if (isExpired(child)) {
-        return { text: "Абонемент истек", className: "critical" };
+
+        return {
+            text: "Абонемент истек",
+            className: "critical"
+        };
+
     }
-    const remaining = getRemaining(child);
+
+
+    const remaining =
+        getRemaining(child);
+
+
     if (remaining === 0) {
-        return { text: "Занятия закончились", className: "critical" };
+
+        return {
+            text: "Занятия закончились",
+            className: "critical"
+        };
+
     }
+
+
     if (remaining <= 2) {
-        return { text: "Осталось мало", className: "warn" };
+
+        return {
+            text: "Осталось мало",
+            className: "warn"
+        };
+
     }
-    return { text: "Активен", className: "ok" };
+
+
+    return {
+        text: "Активен",
+        className: "ok"
+    };
+
 }
+
+
+/* =====================================================
+   КРАСИВАЯ ДАТА
+===================================================== */
 
 function prettyDate(dateString) {
-    if (!dateString) return "—";
-    const parts = dateString.split("-");
-    return parts[2] + "." + parts[1] + "." + parts[0];
+
+    if (!dateString) {
+        return "—";
+    }
+
+
+    const parts =
+        dateString.split("-");
+
+
+    return (
+        parts[2] +
+        "." +
+        parts[1] +
+        "." +
+        parts[0]
+    );
+
 }
+
+
+/* =====================================================
+   ЭКРАНИРОВАНИЕ
+===================================================== */
 
 function escapeHtml(value) {
-    return String(value).replace(/[&<>"']/g, char => {
-        const map = {
-            "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
-        };
-        return map[char];
-    });
+
+    return String(value)
+        .replace(
+            /[&<>"']/g,
+            char => {
+
+                const map = {
+
+                    "&": "&amp;",
+                    "<": "&lt;",
+                    ">": "&gt;",
+                    '"': "&quot;",
+                    "'": "&#039;"
+
+                };
+
+                return map[char];
+
+            }
+        );
+
 }
+
+
+/* =====================================================
+   ЭКСПОРТ И ИМПОРТ EXCEL
+===================================================== */
+
+function exportToExcel() {
+    if (!data.children || data.children.length === 0) {
+        alert("Нет данных для экспорта.");
+        return;
+    }
+
+    // Подготавливаем плоский список для Excel
+    const rows = data.children.map((child, index) => {
+        const visitedDates = (child.visits || []).join(", ");
+        return {
+            "№": index + 1,
+            "ФИО ребенка": child.name || "",
+            "Группа": child.group || "",
+            "Куплено занятий": Number(child.bought || 0),
+            "Дата начала": child.start || "",
+            "Конец абонемента": child.end || "",
+            "Посещенные даты (через запятую)": visitedDates
+        };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Дети и абонементы");
+
+    // Генерация имени файла с текущей датой
+    const dateStr = formatDateLocal(new Date());
+    XLSX.writeFile(workbook, `WaterRocket_Export_${dateStr}.xlsx`);
+}
+
+function importFromExcel(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const dataArr = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(dataArr, { type: 'array' });
+            
+            // Берем первый лист
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            
+            // Превращаем в JSON
+            const json = XLSX.utils.sheet_to_json(worksheet);
+
+            if (!json || json.length === 0) {
+                alert("Файл Excel пуст или имеет неверный формат.");
+                return;
+            }
+
+            const newChildren = [];
+
+            json.forEach(row => {
+                // Поддерживаем разные варианты названий колонок на случай ручного ввода
+                const name = row["ФИО ребенка"] || row["ФИО"] || row["Имя"] || "";
+                const group = row["Группа"] || "";
+                const bought = Number(row["Куплено занятий"] || row["Куплено"] || 8);
+                const start = row["Дата начала"] || row["Начало"] || formatDateLocal(new Date());
+                const end = row["Конец абонемента"] || row["Конец"] || "";
+                const visitsStr = row["Посещенные даты (через запятую)"] || row["Посещения"] || "";
+
+                if (name.trim()) {
+                    let visits = [];
+                    if (typeof visitsStr === 'string' && visitsStr.trim() !== '') {
+                        visits = visitsStr.split(",").map(s => s.trim()).filter(Boolean);
+                    }
+
+                    newChildren.push({
+                        id: createId(),
+                        name: name.trim(),
+                        group: group.trim(),
+                        bought: bought,
+                        start: start,
+                        end: end,
+                        visits: visits
+                    });
+                }
+            });
+
+            if (newChildren.length > 0) {
+                if (confirm(`Найдено записей: ${newChildren.length}. Заменить текущие данные или добавить к существующим?\n\nOK — Заменить полностью\nОтмена — Добавить к текущим`)) {
+                    data.children = newChildren;
+                } else {
+                    data.children = data.children.concat(newChildren);
+                }
+
+                saveData();
+                alert("Данные успешно импортированы из Excel!");
+            } else {
+                alert("Не удалось найти подходящие колонки с данными детей в файле Excel.");
+            }
+
+        } catch (error) {
+            console.error(error);
+            alert("Ошибка при чтении файла Excel.");
+        } finally {
+            // Сбрасываем input, чтобы можно было загрузить тот же файл повторно
+            event.target.value = "";
+        }
+    };
+
+    reader.readAsArrayBuffer(file);
+}
+
+
+/* =====================================================
+   DASHBOARD
+===================================================== */
 
 function renderDashboard() {
-    const children = data.children;
-    let bought = 0, visited = 0, remaining = 0;
 
-    children.forEach(child => {
-        bought += Number(child.bought || 0);
-        visited += getVisits(child).length;
-        remaining += getRemaining(child);
-    });
+    const children =
+        data.children;
 
-    document.getElementById("sChildren").textContent = children.length;
-    document.getElementById("sBought").textContent = bought;
-    document.getElementById("sVisited").textContent = visited;
-    document.getElementById("sLeft").textContent = remaining;
+
+    let bought = 0;
+    let visited = 0;
+    let remaining = 0;
+
+
+    children.forEach(
+        child => {
+
+            bought +=
+                Number(
+                    child.bought || 0
+                );
+
+
+            visited +=
+                getVisits(child).length;
+
+
+            remaining +=
+                getRemaining(child);
+
+        }
+    );
+
+
+    document.getElementById(
+        "sChildren"
+    ).textContent =
+        children.length;
+
+
+    document.getElementById(
+        "sBought"
+    ).textContent =
+        bought;
+
+
+    document.getElementById(
+        "sVisited"
+    ).textContent =
+        visited;
+
+
+    document.getElementById(
+        "sLeft"
+    ).textContent =
+        remaining;
+
 }
+
+
+/* =====================================================
+   ALERTS
+===================================================== */
 
 function renderAlerts() {
-    const expired = data.children.filter(child => isExpired(child));
-    const low = data.children.filter(child => !isExpired(child) && getRemaining(child) <= 2);
+
+    const expired =
+        data.children.filter(
+            child =>
+                isExpired(child)
+        );
+
+
+    const low =
+        data.children.filter(
+            child =>
+                !isExpired(child) &&
+                getRemaining(child) <= 2
+        );
+
+
     let html = "";
+
 
     if (expired.length > 0) {
+
         html += `
+
             <div class="alert expired">
-                ⛔ <b>Абонемент закончился:</b> ${expired.map(c => escapeHtml(c.name)).join(", ")}<br>
-                Неиспользованные занятия сгорели.
+
+                ⛔
+
+                <b>
+                    Абонемент закончился:
+                </b>
+
+                ${expired
+                    .map(
+                        child =>
+                            escapeHtml(
+                                child.name
+                            )
+                    )
+                    .join(", ")
+                }
+
+                <br>
+
+                Неиспользованные занятия
+                сгорели.
+
             </div>
+
         `;
+
     }
+
 
     if (low.length > 0) {
+
         html += `
+
             <div class="alert">
-                ⚠️ <b>Внимание!</b> У ${low.length} ${low.length === 1 ? "ребенка" : "детей"} осталось 2 или меньше занятий.
+
+                ⚠️
+
+                <b>
+                    Внимание!
+                </b>
+
+                У ${low.length}
+
+                ${
+                    low.length === 1
+                    ? "ребенка"
+                    : "детей"
+                }
+
+                осталось 2 или меньше занятий.
+
             </div>
+
         `;
+
     }
 
-    document.getElementById("alerts").innerHTML = html;
+
+    document.getElementById(
+        "alerts"
+    ).innerHTML =
+        html;
+
 }
+
+
+/* =====================================================
+   TABLE
+===================================================== */
 
 function renderTable() {
-    const query = (document.getElementById("search").value || "").trim().toLowerCase();
-    const selectedGroup = document.getElementById("groupFilter")?.value || "";
-    const sortBy = document.getElementById("sortSelect")?.value || "name";
 
-    let children = data.children.filter(child => {
-        const name = (child.name || "").toLowerCase();
-        const group = (child.group || "").toLowerCase();
-        const matchesSearch = !query || name.includes(query) || group.includes(query);
-        const matchesGroup = !selectedGroup || (child.group || "") === selectedGroup;
-        return matchesSearch && matchesGroup;
-    });
+    const query =
+        (
+            document.getElementById(
+                "search"
+            ).value || ""
+        )
+        .trim()
+        .toLowerCase();
 
-    children.sort((a, b) => {
-        if (sortBy === "group") {
-            const result = (a.group || "").localeCompare(b.group || "", "ru");
-            return result || (a.name || "").localeCompare(b.name || "", "ru");
+
+    const selectedGroup =
+        document.getElementById(
+            "groupFilter"
+        )?.value || "";
+
+
+    const sortBy =
+        document.getElementById(
+            "sortSelect"
+        )?.value || "name";
+
+
+    let children =
+        data.children.filter(
+            child => {
+
+                const name =
+                    (child.name || "")
+                    .toLowerCase();
+
+                const group =
+                    (child.group || "")
+                    .toLowerCase();
+
+                const matchesSearch =
+                    !query ||
+                    name.includes(query) ||
+                    group.includes(query);
+
+                const matchesGroup =
+                    !selectedGroup ||
+                    (child.group || "") === selectedGroup;
+
+                return matchesSearch && matchesGroup;
+
+            }
+        );
+
+
+    children.sort(
+        (a, b) => {
+
+            if (sortBy === "group") {
+
+                const result =
+                    (a.group || "").localeCompare(
+                        b.group || "",
+                        "ru"
+                    );
+
+                return result ||
+                    (a.name || "").localeCompare(
+                        b.name || "",
+                        "ru"
+                    );
+            }
+
+
+            if (sortBy === "left") {
+                return getRemaining(a) - getRemaining(b);
+            }
+
+
+            if (sortBy === "visited") {
+                return getVisits(b).length - getVisits(a).length;
+            }
+
+
+            return (a.name || "").localeCompare(
+                b.name || "",
+                "ru"
+            );
+
         }
-        if (sortBy === "left") return getRemaining(a) - getRemaining(b);
-        if (sortBy === "visited") return getVisits(b).length - getVisits(a).length;
-        return (a.name || "").localeCompare(b.name || "", "ru");
-    });
+    );
 
-    const tbody = document.getElementById("tbody");
+
+    const tbody =
+        document.getElementById(
+            "tbody"
+        );
+
 
     if (children.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="empty">Пока нет детей.</td></tr>`;
+
+        tbody.innerHTML = `
+
+            <tr>
+
+                <td
+                    colspan="9"
+                    class="empty">
+
+                    Пока нет детей.
+
+                </td>
+
+            </tr>
+
+        `;
+
         return;
+
     }
 
-    tbody.innerHTML = children.map(child => {
-        const bought = Number(child.bought || 0);
-        const visited = getVisits(child).length;
-        const remaining = getRemaining(child);
-        const percent = bought > 0 ? Math.min(100, Math.round(visited / bought * 100)) : 0;
-        const status = getStatus(child);
 
-        return `
-            <tr>
-                <td><span class="name">${escapeHtml(child.name)}</span></td>
-                <td><span class="group-badge">${escapeHtml(child.group || "Без группы")}</span></td>
-                <td>${bought}</td>
-                <td>${visited}</td>
-                <td><b>${remaining}</b></td>
-                <td>${prettyDate(child.end)}</td>
-                <td>
-                    <div class="bar">
-                        <i class="${remaining <= 2 ? "low" : ""} ${remaining === 0 ? "zero" : ""}" style="width:${percent}%"></i>
-                    </div>
-                </td>
-                <td><span class="badge ${status.className}">${status.text}</span></td>
-                <td>
-                    <div class="row-actions">
-                        <button class="icon" onclick="openCalendar('${child.id}')" title="Календарь">📅</button>
-                        <button class="icon" onclick="editChild('${child.id}')" title="Редактировать">✏️</button>
-                        <button class="icon" onclick="deleteChild('${child.id}')" title="Удалить">🗑️</button>
-                    </div>
-                </td>
-            </tr>
-        `;
-    }).join("");
+    tbody.innerHTML =
+        children.map(
+            child => {
+
+                const bought =
+                    Number(
+                        child.bought || 0
+                    );
+
+
+                const visited =
+                    getVisits(child).length;
+
+
+                const remaining =
+                    getRemaining(child);
+
+
+                const percent =
+                    bought > 0
+                    ? Math.min(
+                        100,
+                        Math.round(
+                            visited /
+                            bought *
+                            100
+                        )
+                    )
+                    : 0;
+
+
+                const status =
+                    getStatus(child);
+
+
+                return `
+
+                    <tr>
+
+                        <td>
+
+                            <span class="name">
+                                ${escapeHtml(child.name)}
+                            </span>
+
+                        </td>
+
+
+                        <td>
+
+                            <span class="group-badge">
+                                ${escapeHtml(child.group || "Без группы")}
+                            </span>
+
+                        </td>
+
+
+                        <td>
+                            ${bought}
+                        </td>
+
+
+                        <td>
+                            ${visited}
+                        </td>
+
+
+                        <td>
+                            <b>${remaining}</b>
+                        </td>
+
+
+                        <td>
+                            ${prettyDate(child.end)}
+                        </td>
+
+
+                        <td>
+
+                            <div class="bar">
+
+                                <i
+                                    class="
+                                        ${remaining <= 2 ? "low" : ""}
+                                        ${remaining === 0 ? "zero" : ""}
+                                    "
+                                    style="width:${percent}%"
+                                ></i>
+
+                            </div>
+
+                        </td>
+
+
+                        <td>
+
+                            <span class="badge ${status.className}">
+                                ${status.text}
+                            </span>
+
+                        </td>
+
+
+                        <td>
+
+                            <div class="row-actions">
+
+                                <button
+                                    class="icon"
+                                    onclick="openCalendar('${child.id}')"
+                                    title="Календарь"
+                                >📅</button>
+
+                                <button
+                                    class="icon"
+                                    onclick="editChild('${child.id}')"
+                                    title="Редактировать"
+                                >✏️</button>
+
+                                <button
+                                    class="icon"
+                                    onclick="deleteChild('${child.id}')"
+                                    title="Удалить"
+                                >🗑️</button>
+
+                            </div>
+
+                        </td>
+
+                    </tr>
+
+                `;
+
+            }
+        ).join("");
+
 }
+
+
+/* =====================================================
+   ГРУППЫ
+===================================================== */
 
 function renderGroupControls() {
-    const filter = document.getElementById("groupFilter");
-    const datalist = document.getElementById("groupOptions");
-    const groups = [...new Set(data.children.map(c => (c.group || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
-    const current = filter?.value || "";
+
+    const filter =
+        document.getElementById(
+            "groupFilter"
+        );
+
+
+    const datalist =
+        document.getElementById(
+            "groupOptions"
+        );
+
+
+    const groups =
+        [...new Set(
+            data.children
+                .map(child => (child.group || "").trim())
+                .filter(Boolean)
+        )]
+        .sort((a, b) => a.localeCompare(b, "ru"));
+
+
+    const current =
+        filter?.value || "";
+
 
     if (filter) {
-        filter.innerHTML = `<option value="">Все группы</option>` + groups.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join("");
-        if (groups.includes(current)) filter.value = current;
+
+        filter.innerHTML = `
+            <option value="">Все группы</option>
+            ${groups.map(group => `
+                <option value="${escapeHtml(group)}">
+                    ${escapeHtml(group)}
+                </option>
+            `).join("")}
+        `;
+
+        if (groups.includes(current)) {
+            filter.value = current;
+        }
     }
+
 
     if (datalist) {
-        datalist.innerHTML = groups.map(g => `<option value="${escapeHtml(g)}"></option>`).join("");
+
+        datalist.innerHTML =
+            groups.map(
+                group => `
+                    <option value="${escapeHtml(group)}"></option>
+                `
+            ).join("");
     }
+
 }
+
+
+/* =====================================================
+   ЗАПОЛНИТЬ SELECT
+===================================================== */
 
 function fillChildSelect() {
-    const select = document.getElementById("calChild");
-    const oldValue = select.value;
 
-    select.innerHTML = data.children.map(child => `
-        <option value="${child.id}">${escapeHtml(child.name)}</option>
-    `).join("");
+    const select =
+        document.getElementById(
+            "calChild"
+        );
 
-    if (oldValue && getChild(oldValue)) select.value = oldValue;
-    if (!select.value && data.children.length > 0) select.value = data.children[0].id;
+
+    const oldValue =
+        select.value;
+
+
+    select.innerHTML =
+        data.children
+            .map(
+                child => `
+
+                    <option
+                        value="${child.id}"
+                    >
+
+                        ${escapeHtml(
+                            child.name
+                        )}
+
+                    </option>
+
+                `
+            )
+            .join("");
+
+
+    if (
+        oldValue &&
+        getChild(oldValue)
+    ) {
+
+        select.value =
+            oldValue;
+
+    }
+
+
+    if (
+        !select.value &&
+        data.children.length > 0
+    ) {
+
+        select.value =
+            data.children[0].id;
+
+    }
+
 }
+
+
+/* =====================================================
+   CALENDAR
+===================================================== */
 
 function renderCalendar() {
-    const select = document.getElementById("calChild");
-    const child = getChild(select.value);
-    const calendar = document.getElementById("calendar");
+
+    const select =
+        document.getElementById(
+            "calChild"
+        );
+
+
+    const child =
+        getChild(select.value);
+
+
+    const calendar =
+        document.getElementById(
+            "calendar"
+        );
+
 
     if (!child) {
-        document.getElementById("monthTitle").textContent = "";
-        calendar.innerHTML = `<div class="empty" style="grid-column:1/-1">Сначала добавьте ребенка.</div>`;
+
+        document.getElementById(
+            "monthTitle"
+        ).textContent = "";
+
+
+        calendar.innerHTML = `
+
+            <div
+                class="empty"
+                style="grid-column:1/-1"
+            >
+
+                Сначала добавьте ребенка.
+
+            </div>
+
+        `;
+
         return;
+
     }
 
-    document.getElementById("calChildName").textContent = child.name;
-    const year = calendarDate.getFullYear();
-    const month = calendarDate.getMonth();
 
-    document.getElementById("monthTitle").textContent = new Intl.DateTimeFormat("ru-RU", {
-        month: "long", year: "numeric"
-    }).format(calendarDate);
+    document.getElementById(
+        "calChildName"
+    ).textContent =
+        child.name;
 
-    const firstDay = createLocalDate(year, month, 1);
-    const startDay = (firstDay.getDay() + 6) % 7;
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const year =
+        calendarDate.getFullYear();
+
+
+    const month =
+        calendarDate.getMonth();
+
+
+    document.getElementById(
+        "monthTitle"
+    ).textContent =
+        new Intl.DateTimeFormat(
+            "ru-RU",
+            {
+                month: "long",
+                year: "numeric"
+            }
+        ).format(calendarDate);
+
+
+    const firstDay =
+        createLocalDate(
+            year,
+            month,
+            1
+        );
+
+
+    const startDay =
+        (
+            firstDay.getDay() +
+            6
+        ) % 7;
+
+
+    const daysInMonth =
+        new Date(
+            year,
+            month + 1,
+            0
+        ).getDate();
+
 
     let html = "";
-    ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].forEach(d => {
-        html += `<div class="dow">${d}</div>`;
-    });
 
-    for (let i = 0; i < startDay; i++) {
-        html += `<div class="day muted"></div>`;
-    }
 
-    const today = formatDateLocal(new Date());
+    const weekDays = [
+        "Пн",
+        "Вт",
+        "Ср",
+        "Чт",
+        "Пт",
+        "Сб",
+        "Вс"
+    ];
 
-    for (let day = 1; day <= daysInMonth; day++) {
-        const date = year + "-" + String(month + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
-        const visited = (child.visits || []).includes(date);
-        const beforeStart = child.start && date < child.start;
-        const afterEnd = child.end && date > child.end;
-        const unavailable = beforeStart || afterEnd;
+
+    weekDays.forEach(
+        day => {
+
+            html += `
+
+                <div class="dow">
+
+                    ${day}
+
+                </div>
+
+            `;
+
+        }
+    );
+
+
+    for (
+        let i = 0;
+        i < startDay;
+        i++
+    ) {
 
         html += `
-            <div class="day ${visited ? "visited" : ""} ${date === today ? "today" : ""} ${afterEnd ? "expired" : ""} ${beforeStart ? "before-start" : ""}"
-                ${unavailable ? "" : `onclick="toggleVisit('${child.id}', '${date}')"`}>
-                <span class="num">${day}</span>
-                ${visited ? `<span class="check">✓</span>` : ""}
-            </div>
+
+            <div class="day muted"></div>
+
         `;
+
     }
 
-    const totalCells = startDay + daysInMonth;
-    const remainingCells = (7 - (totalCells % 7)) % 7;
-    for (let i = 0; i < remainingCells; i++) {
-        html += `<div class="day muted"></div>`;
+
+    const today =
+        formatDateLocal(
+            new Date()
+        );
+
+
+    for (
+        let day = 1;
+        day <= daysInMonth;
+        day++
+    ) {
+
+        const date =
+            year +
+            "-" +
+            String(
+                month + 1
+            ).padStart(2, "0") +
+            "-" +
+            String(day)
+                .padStart(2, "0");
+
+
+        const visited =
+            (
+                child.visits || []
+            ).includes(date);
+
+
+        const beforeStart =
+            child.start &&
+            date < child.start;
+
+
+        const afterEnd =
+            child.end &&
+            date > child.end;
+
+
+        const unavailable =
+            beforeStart ||
+            afterEnd;
+
+
+        html += `
+
+            <div
+
+                class="
+                    day
+
+                    ${
+                        visited
+                        ? "visited"
+                        : ""
+                    }
+
+                    ${
+                        date === today
+                        ? "today"
+                        : ""
+                    }
+
+                    ${
+                        afterEnd
+                        ? "expired"
+                        : ""
+                    }
+
+                    ${
+                        beforeStart
+                        ? "before-start"
+                        : ""
+                    }
+                "
+
+                ${
+                    unavailable
+                    ? ""
+                    : `
+                        onclick="
+                            toggleVisit(
+                                '${child.id}',
+                                '${date}'
+                            )
+                        "
+                    `
+                }
+
+            >
+
+                <span class="num">
+
+                    ${day}
+
+                </span>
+
+
+                ${
+                    visited
+                    ?
+                    `
+                        <span class="check">
+                            ✓
+                        </span>
+                    `
+                    :
+                    ""
+                }
+
+            </div>
+
+        `;
+
     }
 
-    calendar.innerHTML = html;
+
+    const totalCells =
+        startDay +
+        daysInMonth;
+
+
+    const remainingCells =
+        (
+            7 -
+            (
+                totalCells % 7
+            )
+        ) % 7;
+
+
+    for (
+        let i = 0;
+        i < remainingCells;
+        i++
+    ) {
+
+        html += `
+
+            <div class="day muted"></div>
+
+        `;
+
+    }
+
+
+    calendar.innerHTML =
+        html;
+
 }
 
-function toggleVisit(childId, date) {
-    const child = getChild(childId);
-    if (!child) return;
 
-    if (child.start && date < child.start) {
-        alert("Этот день находится до начала абонемента.");
+/* =====================================================
+   ПОСЕЩЕНИЕ
+===================================================== */
+
+function toggleVisit(
+    childId,
+    date
+) {
+
+    const child =
+        getChild(childId);
+
+
+    if (!child) {
         return;
     }
 
-    if (child.end && date > child.end) {
-        alert("Абонемент закончился " + prettyDate(child.end) + ".");
+
+    if (
+        child.start &&
+        date < child.start
+    ) {
+
+        alert(
+            "Этот день находится " +
+            "до начала абонемента."
+        );
+
         return;
+
     }
+
+
+    if (
+        child.end &&
+        date > child.end
+    ) {
+
+        alert(
+            "Абонемент закончился " +
+            prettyDate(child.end) +
+            ". Посещение " +
+            prettyDate(date) +
+            " не засчитывается."
+        );
+
+        return;
+
+    }
+
 
     if (isExpired(child)) {
-        alert("Абонемент уже закончился.");
+
+        alert(
+            "Абонемент уже закончился. " +
+            "Неиспользованные занятия сгорели."
+        );
+
         return;
+
     }
 
-    child.visits = child.visits || [];
-    const index = child.visits.indexOf(date);
+
+    child.visits =
+        child.visits || [];
+
+
+    const index =
+        child.visits.indexOf(date);
+
 
     if (index >= 0) {
-        child.visits.splice(index, 1);
-    } else {
-        if (getVisits(child).length >= Number(child.bought)) {
-            alert("Все купленные занятия уже использованы.");
-            return;
-        }
-        child.visits.push(date);
+
+        child.visits.splice(
+            index,
+            1
+        );
+
     }
 
+    else {
+
+        if (
+            getVisits(child).length >=
+            Number(child.bought)
+        ) {
+
+            alert(
+                "Все купленные занятия " +
+                "уже использованы."
+            );
+
+            return;
+
+        }
+
+
+        child.visits.push(
+            date
+        );
+
+    }
+
+
     saveData();
+
+
+    checkNotification(
+        child
+    );
+
 }
+
+
+/* =====================================================
+   NOTIFICATION
+===================================================== */
+
+function checkNotification(
+    child
+) {
+
+    if (
+        isExpired(child)
+    ) {
+        return;
+    }
+
+
+    if (
+        getRemaining(child) <= 2 &&
+        "Notification" in window &&
+        Notification.permission ===
+            "granted"
+    ) {
+
+        new Notification(
+            "SwimTracker",
+            {
+                body:
+                    child.name +
+                    ": осталось " +
+                    getRemaining(child) +
+                    " занятий."
+            }
+        );
+
+    }
+
+}
+
+
+/* =====================================================
+   ЗАПРОС УВЕДОМЛЕНИЙ
+===================================================== */
 
 async function requestNotifications() {
-    if (!("Notification" in window)) {
-        alert("Ваш браузер не поддерживает уведомления.");
+
+    if (
+        !("Notification" in window)
+    ) {
+
+        alert(
+            "Ваш браузер не поддерживает " +
+            "уведомления."
+        );
+
         return;
+
     }
-    const permission = await Notification.requestPermission();
-    if (permission === "granted") {
-        alert("Уведомления включены.");
-    } else {
-        alert("Разрешение на уведомления не получено.");
+
+
+    const permission =
+        await Notification
+            .requestPermission();
+
+
+    if (
+        permission === "granted"
+    ) {
+
+        alert(
+            "Уведомления включены."
+        );
+
+
+        data.children.forEach(
+            child =>
+                checkNotification(
+                    child
+                )
+        );
+
     }
+
+    else {
+
+        alert(
+            "Разрешение на уведомления " +
+            "не получено."
+        );
+
+    }
+
 }
+
+
+/* =====================================================
+   ОТКРЫТЬ КАЛЕНДАРЬ
+===================================================== */
 
 function openCalendar(id) {
-    showView("calendar");
-    document.getElementById("calChild").value = id;
-    calendarDate = new Date();
+
+    showView(
+        "calendar"
+    );
+
+
+    document.getElementById(
+        "calChild"
+    ).value =
+        id;
+
+
+    calendarDate =
+        new Date();
+
+
     renderCalendar();
+
 }
 
-function openModal(child = null) {
-    editId = child ? child.id : null;
-    document.getElementById("modalTitle").textContent = child ? "Редактировать ребенка" : "Добавить ребенка";
-    document.getElementById("name").value = child?.name || "";
-    document.getElementById("group").value = child?.group || "";
-    document.getElementById("bought").value = child?.bought || 8;
-    document.getElementById("start").value = child?.start || formatDateLocal(new Date());
+
+/* =====================================================
+   MODAL
+===================================================== */
+
+function openModal(
+    child = null
+) {
+
+    editId =
+        child
+        ? child.id
+        : null;
+
+
+    document.getElementById(
+        "modalTitle"
+    ).textContent =
+        child
+        ? "Редактировать ребенка"
+        : "Добавить ребенка";
+
+
+    document.getElementById(
+        "name"
+    ).value =
+        child?.name || "";
+
+
+    document.getElementById(
+        "group"
+    ).value =
+        child?.group || "";
+
+
+    document.getElementById(
+        "bought"
+    ).value =
+        child?.bought || 8;
+
+
+    document.getElementById(
+        "start"
+    ).value =
+        child?.start ||
+        formatDateLocal(
+            new Date()
+        );
+
 
     if (child?.end) {
-        document.getElementById("end").value = child.end;
-    } else {
-        const endDate = new Date();
-        endDate.setDate(endDate.getDate() + 30);
-        document.getElementById("end").value = formatDateLocal(endDate);
+
+        document.getElementById(
+            "end"
+        ).value =
+            child.end;
+
     }
 
-    document.getElementById("modalBg").classList.remove("hidden");
+    else {
+
+        const endDate =
+            new Date();
+
+        endDate.setDate(
+            endDate.getDate() +
+            30
+        );
+
+
+        document.getElementById(
+            "end"
+        ).value =
+            formatDateLocal(
+                endDate
+            );
+
+    }
+
+
+    document
+        .getElementById(
+            "modalBg"
+        )
+        .classList
+        .remove("hidden");
+
 }
+
+
+/* =====================================================
+   ЗАКРЫТЬ MODAL
+===================================================== */
 
 function closeModal() {
-    document.getElementById("modalBg").classList.add("hidden");
+
+    document
+        .getElementById(
+            "modalBg"
+        )
+        .classList
+        .add("hidden");
+
 }
 
-document.getElementById("childForm").addEventListener("submit", function(event) {
-    event.preventDefault();
 
-    const name = document.getElementById("name").value.trim();
-    const group = document.getElementById("group").value.trim();
-    const bought = Number(document.getElementById("bought").value);
-    const start = document.getElementById("start").value;
-    const end = document.getElementById("end").value;
+/* =====================================================
+   СОХРАНЕНИЕ РЕБЕНКА
+===================================================== */
 
-    if (end < start) {
-        alert("Дата окончания не может быть раньше даты начала.");
-        return;
-    }
+document
+    .getElementById(
+        "childForm"
+    )
+    .addEventListener(
+        "submit",
+        function(event) {
 
-    if (editId) {
-        const child = getChild(editId);
-        child.name = name;
-        child.group = group;
-        child.bought = bought;
-        child.start = start;
-        child.end = end;
-    } else {
-        data.children.push({
-            id: createId(),
-            name: name,
-            group: group,
-            bought: bought,
-            start: start,
-            end: end,
-            visits: []
-        });
-    }
+            event.preventDefault();
 
-    closeModal();
-    saveData();
-});
+
+            const name =
+                document
+                    .getElementById(
+                        "name"
+                    )
+                    .value
+                    .trim();
+
+
+            const group =
+                document
+                    .getElementById(
+                        "group"
+                    )
+                    .value
+                    .trim();
+
+
+            const bought =
+                Number(
+                    document
+                        .getElementById(
+                            "bought"
+                        )
+                        .value
+                );
+
+
+            const start =
+                document
+                    .getElementById(
+                        "start"
+                    )
+                    .value;
+
+
+            const end =
+                document
+                    .getElementById(
+                        "end"
+                    )
+                    .value;
+
+
+            if (
+                end < start
+            ) {
+
+                alert(
+                    "Дата окончания " +
+                    "не может быть раньше " +
+                    "даты начала."
+                );
+
+                return;
+
+            }
+
+
+            if (
+                editId
+            ) {
+
+                const child =
+                    getChild(
+                        editId
+                    );
+
+
+                child.name =
+                    name;
+
+
+                child.group =
+                    group;
+
+
+                child.bought =
+                    bought;
+
+
+                child.start =
+                    start;
+
+
+                child.end =
+                    end;
+
+            }
+
+            else {
+
+                data.children.push({
+
+                    id:
+                        createId(),
+
+                    name:
+                        name,
+
+                    group:
+                        group,
+
+                    bought:
+                        bought,
+
+                    start:
+                        start,
+
+                    end:
+                        end,
+
+                    visits:
+                        []
+
+                });
+
+            }
+
+
+            closeModal();
+
+            saveData();
+
+        }
+    );
+
+
+/* =====================================================
+   РЕДАКТИРОВАНИЕ
+===================================================== */
 
 function editChild(id) {
-    const child = getChild(id);
-    if (child) openModal(child);
+
+    const child =
+        getChild(id);
+
+
+    if (child) {
+
+        openModal(
+            child
+        );
+
+    }
+
 }
+
+
+/* =====================================================
+   УДАЛЕНИЕ
+===================================================== */
 
 function deleteChild(id) {
-    const child = getChild(id);
-    if (!child) return;
 
-    if (confirm("Удалить ребенка " + child.name + "?")) {
-        data.children = data.children.filter(c => c.id !== id);
-        saveData();
-    }
-}
+    const child =
+        getChild(id);
 
-function renderChildren() {
-    const container = document.getElementById("childrenCards");
-    if (data.children.length === 0) {
-        container.innerHTML = `<div class="empty">Нет детей.</div>`;
+
+    if (!child) {
         return;
     }
 
-    container.innerHTML = data.children.map(child => {
-        const status = getStatus(child);
-        return `
-            <div class="card" style="box-shadow:none; margin-bottom:10px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:15px;">
-                    <div>
-                        <div class="name">${escapeHtml(child.name)}</div>
-                        <div class="subtitle" style="margin-top:5px;">Группа: <b>${escapeHtml(child.group || "Без группы")}</b></div>
-                        <div class="subtitle">Куплено: ${child.bought} · Посещено: ${getVisits(child).length} · Осталось: <b>${getRemaining(child)}</b> · До: <b>${prettyDate(child.end)}</b></div>
-                    </div>
-                    <div class="row-actions">
-                        <span class="badge ${status.className}">${status.text}</span>
-                        <button class="icon" onclick="openCalendar('${child.id}')">📅</button>
-                        <button class="icon" onclick="editChild('${child.id}')">✏️</button>
-                    </div>
-                </div>
-            </div>
-        `;
-    }).join("");
+
+    if (
+        confirm(
+            "Удалить ребенка " +
+            child.name +
+            "?"
+        )
+    ) {
+
+        data.children =
+            data.children.filter(
+                child =>
+                    child.id !== id
+            );
+
+
+        saveData();
+
+    }
+
 }
+
+
+/* =====================================================
+   СПИСОК ДЕТЕЙ
+===================================================== */
+
+function renderChildren() {
+
+    const container =
+        document.getElementById(
+            "childrenCards"
+        );
+
+
+    if (
+        data.children.length === 0
+    ) {
+
+        container.innerHTML = `
+
+            <div class="empty">
+
+                Нет детей.
+
+            </div>
+
+        `;
+
+        return;
+
+    }
+
+
+    container.innerHTML =
+        data.children
+            .map(
+                child => {
+
+                    const status =
+                        getStatus(
+                            child
+                        );
+
+
+                    return `
+
+                        <div
+                            class="card"
+                            style="
+                                box-shadow:none;
+                                margin-bottom:10px;
+                            "
+                        >
+
+                            <div
+                                style="
+                                    display:flex;
+                                    justify-content:space-between;
+                                    align-items:center;
+                                    gap:15px;
+                                "
+                            >
+
+                                <div>
+
+                                    <div
+                                        class="name"
+                                    >
+
+                                        ${escapeHtml(
+                                            child.name
+                                        )}
+
+                                    </div>
+
+
+                                    <div
+                                        class="subtitle"
+                                        style="margin-top:5px;"
+                                    >
+
+                                        Группа: <b>
+                                            ${escapeHtml(child.group || "Без группы")}
+                                        </b>
+
+                                    </div>
+
+
+                                    <div
+                                        class="subtitle"
+                                    >
+
+                                        Куплено:
+                                        ${child.bought}
+
+                                        ·
+
+                                        Посещено:
+                                        ${getVisits(child).length}
+
+                                        ·
+
+                                        Осталось:
+                                        <b>
+                                            ${getRemaining(child)}
+                                        </b>
+
+                                        ·
+
+                                        До:
+                                        <b>
+                                            ${prettyDate(child.end)}
+                                        </b>
+
+                                    </div>
+
+                                </div>
+
+
+                                <div
+                                    class="row-actions"
+                                >
+
+                                    <span
+                                        class="
+                                            badge
+                                            ${status.className}
+                                        "
+                                    >
+
+                                        ${status.text}
+
+                                    </span>
+
+
+                                    <button
+                                        class="icon"
+                                        onclick="
+                                            openCalendar(
+                                                '${child.id}'
+                                            )
+                                        "
+                                    >
+                                        📅
+                                    </button>
+
+
+                                    <button
+                                        class="icon"
+                                        onclick="
+                                            editChild(
+                                                '${child.id}'
+                                            )
+                                        "
+                                    >
+                                        ✏️
+                                    </button>
+
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    `;
+
+                }
+            )
+            .join("");
+
+}
+
+
+/* =====================================================
+   НАВИГАЦИЯ
+===================================================== */
 
 function showView(view) {
-    ["dashboard", "calendar", "children", "settings"].forEach(item => {
-        document.getElementById(item + "View").classList.toggle("hidden", item !== view);
-    });
 
-    document.querySelectorAll(".nav button").forEach(button => {
-        button.classList.toggle("active", button.dataset.view === view);
-    });
+    const views = [
+        "dashboard",
+        "calendar",
+        "children",
+        "settings"
+    ];
+
+
+    views.forEach(
+        item => {
+
+            document
+                .getElementById(
+                    item + "View"
+                )
+                .classList
+                .toggle(
+                    "hidden",
+                    item !== view
+                );
+
+        }
+    );
+
+
+    document
+        .querySelectorAll(
+            ".nav button"
+        )
+        .forEach(
+            button => {
+
+                button.classList.toggle(
+                    "active",
+                    button.dataset.view === view
+                );
+
+            }
+        );
+
 
     const titles = {
-        dashboard: "WATERROCKET",
-        calendar: "Календарь",
-        children: "Дети",
-        settings: "Настройки"
+
+        dashboard:
+            "WATER ROCKET",
+
+        calendar:
+            "Календарь",
+
+        children:
+            "Дети",
+
+        settings:
+            "Настройки"
+
     };
 
-    document.getElementById("title").textContent = titles[view];
-    if (view === "calendar") renderCalendar();
+
+    document.getElementById(
+        "title"
+    ).textContent =
+        titles[view];
+
+
+    if (
+        view === "calendar"
+    ) {
+
+        renderCalendar();
+
+    }
+
 }
 
-document.getElementById("prevMonth").onclick = function() {
-    calendarDate.setMonth(calendarDate.getMonth() - 1);
-    renderCalendar();
-};
 
-document.getElementById("nextMonth").onclick = function() {
-    calendarDate.setMonth(calendarDate.getMonth() + 1);
-    renderCalendar();
-};
+/* =====================================================
+   ПЕРЕКЛЮЧЕНИЕ МЕСЯЦА
+===================================================== */
 
-document.getElementById("calChild").onchange = renderCalendar;
-document.getElementById("search").oninput = renderTable;
-document.getElementById("groupFilter").onchange = renderTable;
-document.getElementById("sortSelect").onchange = renderTable;
+document
+    .getElementById(
+        "prevMonth"
+    )
+    .onclick =
+        function() {
 
-document.getElementById("addBtn").onclick = () => openModal();
-document.getElementById("addBtn2").onclick = () => openModal();
-document.getElementById("cancel").onclick = closeModal;
-document.getElementById("notifyBtn").onclick = requestNotifications;
-document.getElementById("notifyBtn2").onclick = requestNotifications;
+            calendarDate.setMonth(
+                calendarDate.getMonth() - 1
+            );
 
-document.getElementById("modalBg").onclick = function(event) {
-    if (event.target.id === "modalBg") closeModal();
-};
+            renderCalendar();
 
-document.querySelectorAll(".nav button").forEach(button => {
-    button.onclick = function() {
-        showView(button.dataset.view);
-    };
-});
+        };
+
+
+document
+    .getElementById(
+        "nextMonth"
+    )
+    .onclick =
+        function() {
+
+            calendarDate.setMonth(
+                calendarDate.getMonth() + 1
+            );
+
+            renderCalendar();
+
+        };
+
+
+/* =====================================================
+   SELECT РЕБЕНКА
+===================================================== */
+
+document
+    .getElementById(
+        "calChild"
+    )
+    .onchange =
+        renderCalendar;
+
+
+/* =====================================================
+   ПОИСК
+===================================================== */
+
+document
+    .getElementById(
+        "search"
+    )
+    .oninput =
+        renderTable;
+
+
+document
+    .getElementById(
+        "groupFilter"
+    )
+    .onchange =
+        renderTable;
+
+
+document
+    .getElementById(
+        "sortSelect"
+    )
+    .onchange =
+        renderTable;
+
+
+/* =====================================================
+   КНОПКИ
+===================================================== */
+
+document
+    .getElementById(
+        "addBtn"
+    )
+    .onclick =
+        () =>
+            openModal();
+
+
+document
+    .getElementById(
+        "addBtn2"
+    )
+    .onclick =
+        () =>
+            openModal();
+
+
+document
+    .getElementById(
+        "exportExcelBtn"
+    )
+    .onclick =
+        exportToExcel;
+
+
+document
+    .getElementById(
+        "cancel"
+    )
+    .onclick =
+        closeModal;
+
+
+document
+    .getElementById(
+        "notifyBtn"
+    )
+    .onclick =
+        requestNotifications;
+
+
+document
+    .getElementById(
+        "notifyBtn2"
+    )
+    .onclick =
+        requestNotifications;
+
+
+/* =====================================================
+   ЗАКРЫТИЕ MODAL ПО ФОНУ
+===================================================== */
+
+document
+    .getElementById(
+        "modalBg"
+    )
+    .onclick =
+        function(event) {
+
+            if (
+                event.target.id ===
+                "modalBg"
+            ) {
+
+                closeModal();
+
+            }
+
+        };
+
+
+/* =====================================================
+   NAVIGATION
+===================================================== */
+
+document
+    .querySelectorAll(
+        ".nav button"
+    )
+    .forEach(
+        button => {
+
+            button.onclick =
+                function() {
+
+                    showView(
+                        button.dataset.view
+                    );
+
+                };
+
+        }
+    );
+
+
+/* =====================================================
+   ОБЩИЙ RENDER
+===================================================== */
 
 function renderAll() {
+
     renderDashboard();
+
     renderAlerts();
+
     renderGroupControls();
+
     renderTable();
+
     renderChildren();
+
     fillChildSelect();
+
     renderCalendar();
+
 }
+
+
+/* =====================================================
+   ЗАПУСК
+===================================================== */
+
+renderAll();
 
 </script>
 
