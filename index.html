@@ -571,6 +571,11 @@ select {
         <button
             class="active"
             data-view="dashboard">
+            🏠 Главная (Dashboard)
+        </button>
+
+        <button
+            data-view="dashboard">
             📊 WATER ROCKET
         </button>
 
@@ -619,6 +624,12 @@ select {
         </div>
 
         <div class="actions">
+
+            <button
+                class="btn"
+                onclick="showView('dashboard')">
+                🏠 На главную
+            </button>
 
             <button
                 class="btn excel"
@@ -936,7 +947,8 @@ select {
         <strong>Настройки и данные</strong>
         <p class="subtitle" style="margin-top: 10px;">Вы можете экспортировать все данные системы в файл Excel или импортировать их обратно для восстановления.</p>
         
-        <div style="display: flex; gap: 10px; margin-top: 20px;">
+        <div style="display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap;">
+            <button class="btn primary" onclick="showView('dashboard')">🏠 Вернуться на главный экран</button>
             <button class="btn excel" onclick="exportToExcel()">📥 Скачать Excel</button>
             <button class="btn excel" onclick="document.getElementById('importExcelInput2').click()">📤 Загрузить Excel</button>
             <input type="file" id="importExcelInput2" accept=".xlsx, .xls" style="display: none;" onchange="importFromExcel(event)">
